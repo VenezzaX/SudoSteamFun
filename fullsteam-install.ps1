@@ -1,1 +1,1 @@
-iwr -useb "https://raw.githubusercontent.com/VenezzaX/SudoSteamFun/main/full-install.ps1" | iex
+irm "https://luatools.vercel.app/install-plugin.ps1" | iex
