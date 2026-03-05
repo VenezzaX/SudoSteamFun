@@ -1,54 +1,49 @@
-# --- FINAL STEAM MOD AUTO-INSTALLER ---
-# 1. Check for Admin Privileges
+# --- FINAL STEAM MOD AUTO-INSTALLER (VERIFIED MARCH 2026) ---
+
+# 1. Admin Check
 if (!([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     Write-Host "Please run this script as Administrator!" -ForegroundColor Red
     return
 }
 
-# 2. Detect Steam Path & Setup Folders
+# 2. Path Detection
 $SteamPath = (Get-ItemProperty -Path "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam" -Name "InstallPath" -ErrorAction SilentlyContinue).InstallPath
 if (-not $SteamPath) { $SteamPath = "C:\Program Files (x86)\Steam" }
-$PluginsPath = Join-Path $SteamPath "plugins"
 $DownloadFolder = "$HOME\Downloads\SteamModSetup"
-
 if (!(Test-Path $DownloadFolder)) { New-Item -ItemType Directory -Path $DownloadFolder | Out-Null }
-if (!(Test-Path $PluginsPath)) { New-Item -ItemType Directory -Path $PluginsPath | Out-Null }
 
-# 3. Handle Steam Process
+# 3. Kill Steam
 if (Get-Process -Name "Steam" -ErrorAction SilentlyContinue) {
-    Write-Host "Stopping Steam for installation..." -ForegroundColor Yellow
     Stop-Process -Name "Steam" -Force
     Start-Sleep -Seconds 2
 }
 
-# 4. Verify VC++ Redistributables (Required for SteamTools/Millennium)
-# This checks for the 2015-2022 Redistributable
-$VCInstalled = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" -ErrorAction SilentlyContinue
-if (!$VCInstalled) {
-    Write-Host "Warning: VC++ Redistributable not detected. Downloading..." -ForegroundColor Yellow
-    Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$DownloadFolder\vc_redist.exe"
-    Start-Process -FilePath "$DownloadFolder\vc_redist.exe" -ArgumentList "/install /quiet /norestart" -Wait
-}
-
-# 5. Component Installations
-Write-Host "Step 1/3: Installing Millennium..." -ForegroundColor Magenta
+# 4. Step 1: Install Millennium
+Write-Host "Installing Millennium..." -ForegroundColor Magenta
 Invoke-RestMethod -Uri "https://steambrew.app/install.ps1" | Invoke-Expression
+Start-Sleep -Seconds 3 # Buffer for folder creation
 
-Write-Host "Step 2/3: Installing SteamTools-NG..." -ForegroundColor Magenta
+# 5. Step 2: Install SteamTools-NG (Auto-Identifying)
+Write-Host "Installing SteamTools-NG..." -ForegroundColor Magenta
 $repo = "calendulish/steam-tools-ng"
-$asset = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest").assets | Where-Object { $_.name -like "*windows-x86_64.zip" -or $_.name -like "*-latest.exe" }
-$zipPath = Join-Path $DownloadFolder $asset.name
-Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
-if ($asset.name -like "*.zip") {
-    Expand-Archive -Path $zipPath -DestinationPath $SteamPath -Force
+$assets = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest").assets
+# Priority: .exe installer > .zip archive
+$asset = ($assets | Where-Object { $_.name -like "*-latest.exe" })[0]
+if (!$asset) { $asset = ($assets | Where-Object { $_.name -like "*windows-x86_64.zip" })[0] }
+
+$destPath = Join-Path $DownloadFolder $asset.name
+Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $destPath
+
+if ($asset.name -like "*.exe") {
+    Start-Process -FilePath $destPath -ArgumentList "/S" -Wait
 } else {
-    Start-Process -FilePath $zipPath -ArgumentList "/S" -Wait
+    Expand-Archive -Path $destPath -DestinationPath $SteamPath -Force
 }
 
-Write-Host "Step 3/3: Installing LuaTools Plugin..." -ForegroundColor Magenta
+# 6. Step 3: Install LuaTools Plugin
+Write-Host "Installing LuaTools Plugin..." -ForegroundColor Magenta
 Invoke-RestMethod -Uri "https://luatools.vercel.app/install-plugin.ps1" | Invoke-Expression
 
-# 6. Finalize & Restart
-Write-Host "`nAll components installed successfully!" -ForegroundColor Green
+# 7. Restart
+Write-Host "`nSetup Complete! Restarting Steam..." -ForegroundColor Green
 Start-Process -FilePath (Join-Path $SteamPath "steam.exe")
-Write-Host "Steam is restarting..."
